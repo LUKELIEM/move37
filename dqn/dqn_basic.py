@@ -1,4 +1,5 @@
 # Forked from https://github.com/PacktPublishing/Deep-Reinforcement-Learning-Hands-On
+# 7-15-2019 Added documentation while learning the code
 
 from lib import wrappers
 from lib import dqn_model
@@ -13,7 +14,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-from tensorboardX import SummaryWriter
+from tensorboardX import SummaryWriter   # tensorboard for pytorch
 
 
 DEFAULT_ENV_NAME = "PongNoFrameskip-v4"
@@ -21,36 +22,40 @@ MEAN_REWARD_GOAL = 19.5
 
 GAMMA = 0.99
 BATCH_SIZE = 32
-REPLAY_BUFFER_SIZE = 10000
+REPLAY_BUFFER_SIZE = 10000    # 10000 game steps ??
 REPLAY_MIN_SIZE = 10000
 LEARNING_RATE = 1e-4
 SYNC_TARGET_FRAMES = 1000
 
-EPSILON_START = 1.0
+EPSILON_START = 1.0    # epsilon-greedy is used, whereby epsilon is annealed
 EPSILON_FINAL = 0.02
 EPSILON_DECAY_FRAMES = 10**5
 
-
+# Definition of experience
 Experience = collections.namedtuple('Experience', field_names=['state', 'action', 'reward', 'done', 'new_state'])
 
 
+# implement experience replay 
 class ExperienceBuffer:
+
     def __init__(self, capacity):
-        self.buffer = collections.deque(maxlen=capacity)
+        self.buffer = collections.deque(maxlen=capacity)   # replay buffer of 10K steps
 
     def __len__(self):
         return len(self.buffer)
 
     def append(self, experience):
+        # This method add 1 experience to the replay buffer
         self.buffer.append(experience)
 
     def sample(self, batch_size):
+        # This method randomly sample batch_size # of experiences from the replay buffer
         indices = np.random.choice(len(self.buffer), batch_size, replace=False)
         states, actions, rewards, dones, next_states = zip(*[self.buffer[idx] for idx in indices])
         return np.array(states), np.array(actions), np.array(rewards, dtype=np.float32), \
                np.array(dones, dtype=np.uint8), np.array(next_states)
 
-
+# implement DQN agent 
 class Agent:
     def __init__(self, env, exp_buffer):
         self.env = env
@@ -62,15 +67,18 @@ class Agent:
         self.total_reward = 0.0
 
     def play_step(self, net, epsilon=0.0, device="cpu"):
+        # This method has the DQN agent play a single step
+
         done_reward = None
 
-        if np.random.random() < epsilon:
+        # epsilon greedy
+        if np.random.random() < epsilon:    
             action = env.action_space.sample()
         else:
             state_a = np.array([self.state], copy=False)
             state_v = torch.tensor(state_a).to(device)
-            q_vals_v = net(state_v)
-            _, act_v = torch.max(q_vals_v, dim=1)
+            q_vals_v = net(state_v)      # DQN network --> Q values
+            _, act_v = torch.max(q_vals_v, dim=1)   # Pick the action with the highest Q value
             action = int(act_v.item())
 
         # do step in the environment
@@ -78,8 +86,10 @@ class Agent:
         self.total_reward += reward
         new_state = new_state
 
+        # Store experience into replay buffer
         exp = Experience(self.state, action, reward, is_done, new_state)
         self.exp_buffer.append(exp)
+
         self.state = new_state
         if is_done:
             done_reward = self.total_reward
@@ -88,6 +98,8 @@ class Agent:
 
 
 def calc_loss(batch, net, tgt_net, device="cpu"):
+    # This method calculate the loss for a batch of experiences
+
     states, actions, rewards, dones, next_states = batch
 
     states_v = torch.tensor(states).to(device)
@@ -96,10 +108,11 @@ def calc_loss(batch, net, tgt_net, device="cpu"):
     rewards_v = torch.tensor(rewards).to(device)
     done_mask = torch.ByteTensor(dones).to(device)
 
-    state_action_values = net(states_v).gather(1, actions_v.unsqueeze(-1)).squeeze(-1)
-    next_state_values = tgt_net(next_states_v).max(1)[0]
-    next_state_values[done_mask] = 0.0
-    next_state_values = next_state_values.detach()
+    # ?? what is going on here ??
+    state_action_values = net(states_v).gather(1, actions_v.unsqueeze(-1)).squeeze(-1) 
+    next_state_values = tgt_net(next_states_v).max(1)[0] 
+    next_state_values[done_mask] = 0.0 
+    next_state_values = next_state_values.detach() 
 
     expected_state_action_values = next_state_values * GAMMA + rewards_v
     return nn.MSELoss()(state_action_values, expected_state_action_values)
@@ -118,11 +131,13 @@ if __name__ == "__main__":
 
     env = wrappers.make_env(args.env)
 
+    # There are 2 DQN networks
     net = dqn_model.DQN(env.observation_space.shape, env.action_space.n).to(device)
     tgt_net = dqn_model.DQN(env.observation_space.shape, env.action_space.n).to(device)
     writer = SummaryWriter(comment="-" + args.env)
     print(net)
 
+    # Set up experience buffer and DQN agent 
     buffer = ExperienceBuffer(REPLAY_BUFFER_SIZE)
     agent = Agent(env, buffer)
     epsilon = EPSILON_START
@@ -136,11 +151,16 @@ if __name__ == "__main__":
 
     while True:
         frame_idx += 1
+
+        # Anneal epsilon for epsilon-greedy
         epsilon = max(EPSILON_FINAL, EPSILON_START - frame_idx / EPSILON_DECAY_FRAMES)
 
+        # Agent plays 1 step in env
         reward = agent.play_step(net, epsilon, device=device)
+
         if reward is not None:
-            total_rewards.append(reward)
+
+            total_rewards.append(reward)  # append reward
             speed = (frame_idx - ts_frame) / (time.time() - ts)
             ts_frame = frame_idx
             ts = time.time()
@@ -149,10 +169,13 @@ if __name__ == "__main__":
                 frame_idx, len(total_rewards), mean_reward, epsilon,
                 speed
             ))
+
+            # Write to tensorboard output file
             writer.add_scalar("epsilon", epsilon, frame_idx)
             writer.add_scalar("speed", speed, frame_idx)
             writer.add_scalar("reward_100", mean_reward, frame_idx)
             writer.add_scalar("reward", reward, frame_idx)
+
             if best_mean_reward is None or best_mean_reward < mean_reward:
                 torch.save(net.state_dict(), './checkpoints/' + args.env + "-best.dat")
                 if best_mean_reward is not None:
@@ -162,9 +185,11 @@ if __name__ == "__main__":
                 print("Solved in %d frames!" % frame_idx)
                 break
 
-        if len(buffer) < REPLAY_MIN_SIZE:
+        # Update target DQN network only when the experience buffer has been fully populated with experiences
+        if len(buffer) < REPLAY_MIN_SIZE:  
             continue
 
+        # Update target network every 1000 frames
         if frame_idx % SYNC_TARGET_FRAMES == 0:
             tgt_net.load_state_dict(net.state_dict())
 

@@ -1,5 +1,6 @@
 #This code is from openai baseline
 #https://github.com/openai/baselines/tree/master/baselines/common/vec_env
+# 7-16-2019 Added documentation while learning the code
 
 import numpy as np
 from multiprocessing import Process, Pipe

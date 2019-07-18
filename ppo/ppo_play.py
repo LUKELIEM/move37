@@ -2,6 +2,10 @@ import argparse
 import gym
 import roboschool
 
+# Added to fix OpenGL problem on ubuntu 16.04
+# https://github.com/openai/roboschool/issues/8
+from OpenGL import GLU   
+
 from lib.model import ActorCritic
 
 import numpy as np
