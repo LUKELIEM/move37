@@ -31,12 +31,12 @@ stable.
 
 """
 
-NUM_ENVS            = 8     # Run 8 env in parallel?
+NUM_ENVS            = 8     # ?? Is the code running 8 env in parallel ??
 ENV_ID              = "RoboschoolHalfCheetah-v1"
 HIDDEN_SIZE         = 256
 LEARNING_RATE       = 1e-4
 GAMMA               = 0.99
-GAE_LAMBDA          = 0.95
+GAE_LAMBDA          = 0.95   # smoothing factor for GAE
 PPO_EPSILON         = 0.2
 CRITIC_DISCOUNT     = 0.5
 ENTROPY_BETA        = 0.001   # Entropy - for exploration
@@ -87,7 +87,7 @@ def normalize(x):
 
 
 def compute_gae(next_value, rewards, masks, values, gamma=GAMMA, lam=GAE_LAMBDA):
-    # GAE better estimate advantage in order to reduce variance:
+    # GAE better estimates advantage in order to reduce variance:
     #  - masks: 0 if terminal state, 1 otherwise
     #  - lam: smoothing factor, set at 0.95
 
@@ -107,7 +107,7 @@ def compute_gae(next_value, rewards, masks, values, gamma=GAMMA, lam=GAE_LAMBDA)
 
 def ppo_iter(states, actions, log_probs, returns, advantage):
     batch_size = states.size(0)
-    # generates random mini-batches until we have covered the full batch
+    # generates random mini-batches until we have sampled a full batch_size
     for _ in range(batch_size // MINI_BATCH_SIZE):
         rand_ids = np.random.randint(0, batch_size, MINI_BATCH_SIZE)
         yield states[rand_ids, :], actions[rand_ids, :], log_probs[rand_ids, :], returns[rand_ids, :], advantage[rand_ids, :]
@@ -123,7 +123,7 @@ def ppo_update(frame_idx, states, actions, log_probs, returns, advantages, clip_
     sum_entropy = 0.0
     sum_loss_total = 0.0
 
-    # PPO EPOCHS is the number of times we will go through ALL the training data to make updates
+    # PPO EPOCHS is the number of times (10) we will go through ALL the training data to make updates
     for _ in range(PPO_EPOCHS):
 
         # grabs random mini-batches several times until we have covered all data
@@ -201,7 +201,7 @@ if __name__ == "__main__":
     best_reward = None
 
     state = envs.reset()
-    early_stop = False  # variable used to stop the while loop below (when target reward reached)
+    early_stop = False  # variable used to stop the while loop (when target reward reached)
 
     while not early_stop:  # Loop until target reward reached
 
@@ -218,10 +218,11 @@ if __name__ == "__main__":
             dist, value = model(state)
             action = dist.sample()
 
-            # each state, reward, done is a list of results from each parallel environment
+            # next_state, reward, done are results from the parallel environments
             next_state, reward, done, _ = envs.step(action.cpu().numpy())
             log_prob = dist.log_prob(action)
             
+            # generate a time series list of results
             log_probs.append(log_prob)
             values.append(value)
             rewards.append(torch.FloatTensor(reward).unsqueeze(1).to(device))
@@ -233,16 +234,18 @@ if __name__ == "__main__":
             state = next_state
             frame_idx += 1
         
-        # Compute next_value (for GAE)
+        # Compute next_value (needed for GAE)
         next_state = torch.FloatTensor(next_state).to(device)
         _, next_value = model(next_state)
 
         # Use GAE to estimate returns
         returns = compute_gae(next_value, rewards, masks, values)
 
+        # detach() detaches the output from the computationnal graph. So no gradient will be backproped along this variable.
         returns   = torch.cat(returns).detach()
         log_probs = torch.cat(log_probs).detach()
         values    = torch.cat(values).detach()
+        
         states    = torch.cat(states)
         actions   = torch.cat(actions)
 
