@@ -124,8 +124,15 @@ if __name__ == "__main__":
     parser.add_argument("--cuda", default=False, action="store_true", help="Enable cuda")
     parser.add_argument("--env", default=DEFAULT_ENV_NAME,
                         help="Name of the environment, default=" + DEFAULT_ENV_NAME)
-    parser.add_argument("--reward", type=float, default=MEAN_REWARD_GOAL,
-                        help="Mean reward goal to stop training, default=%.2f" % MEAN_REWARD_GOAL)
+    
+    # 8-7-2019 No longer stop training based on target rewards
+    # parser.add_argument("--reward", type=float, default=MEAN_REWARD_GOAL,
+    #                     help="Mean reward goal to stop training, default=%.2f" % MEAN_REWARD_GOAL)
+    
+    # 8-7-2019 Added to limit num of training steps
+    parser.add_argument('--num-env-steps', type=int, 
+        default=1e7, help='number of environment steps to train (default: 1.0e7)')
+
     args = parser.parse_args()
     device = torch.device("cuda" if args.cuda else "cpu")
 
@@ -151,6 +158,11 @@ if __name__ == "__main__":
 
     while True:
         frame_idx += 1
+
+        # 8-7-2019 Exit training if steps limit exceeded
+        if frame_idx > args.num_env_steps:
+            print("Runned %d frames!" % frame_idx)
+            break
 
         # Anneal epsilon for epsilon-greedy
         epsilon = max(EPSILON_FINAL, EPSILON_START - frame_idx / EPSILON_DECAY_FRAMES)
@@ -181,9 +193,11 @@ if __name__ == "__main__":
                 if best_mean_reward is not None:
                     print("Best mean reward updated %.3f -> %.3f, model saved" % (best_mean_reward, mean_reward))
                 best_mean_reward = mean_reward
-            if mean_reward > args.reward:
-                print("Solved in %d frames!" % frame_idx)
-                break
+
+            # 8-7-2019 No longer stop training based on target rewards
+            # if mean_reward > args.reward:
+            #     print("Solved in %d frames!" % frame_idx)
+            #     break
 
         # Update target DQN network only when the experience buffer has been fully populated with experiences
         if len(buffer) < REPLAY_MIN_SIZE:  
